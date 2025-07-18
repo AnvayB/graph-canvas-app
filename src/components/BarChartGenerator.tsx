@@ -1,295 +1,242 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, Save, RotateCcw, Shuffle } from 'lucide-react';
 import * as d3 from 'd3';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
+import { Plus, Minus, Save, BarChart3, Shuffle, FileText } from 'lucide-react';
+import { useToast } from '../hooks/use-toast';
 import { saveChart } from '../utils/chartStorage';
+import Navigation from './Navigation';
 
-interface DataRow {
+interface DataItem {
   label: string;
   value: number;
   color: string;
 }
 
+const initialData: DataItem[] = [
+  { label: 'Category A', value: 30, color: '#2563eb' },
+  { label: 'Category B', value: 50, color: '#3b82f6' },
+  { label: 'Category C', value: 70, color: '#60a5fa' },
+  { label: 'Category D', value: 40, color: '#93c5fd' },
+];
+
 const BarChartGenerator = () => {
-  const [data, setData] = useState<DataRow[]>([
-    { label: 'Product A', value: 45, color: '#3B82F6' },
-    { label: 'Product B', value: 32, color: '#10B981' },
-    { label: 'Product C', value: 28, color: '#F59E0B' }
-  ]);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [data, setData] = useState<DataItem[]>(initialData);
+  const [chartTitle, setChartTitle] = useState('Interactive Bar Chart');
+  const chartRef = useRef<SVGSVGElement | null>(null);
+  const [isChartSaved, setIsChartSaved] = useState(false);
   const { toast } = useToast();
 
-  const addDataRow = () => {
-    const colors = ['#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    setData([...data, { label: '', value: 0, color: randomColor }]);
+  useEffect(() => {
+    drawChart();
+  }, [data]);
+
+  const drawChart = () => {
+    if (!chartRef.current) return;
+
+    const svg = d3.select(chartRef.current);
+    svg.selectAll('*').remove();
+
+    const margin = { top: 60, right: 30, bottom: 70, left: 80 };
+    const width = 800 - margin.left - margin.right;
+    const height = 500 - margin.top - margin.bottom;
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleBand()
+      .domain(data.map(d => d.label))
+      .rangeRound([0, width])
+      .padding(0.1);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, d => d.value) || 0])
+      .range([height, 0]);
+
+    const xAxis = d3.axisBottom(x);
+    const yAxis = d3.axisLeft(y).ticks(5);
+
+    g.append("g")
+      .attr("transform", `translate(0,${height})`)
+      .call(xAxis)
+      .selectAll("text")
+      .style("text-anchor", "middle")
+      .style("font-size", "12px");
+
+    g.append("g")
+      .call(yAxis)
+      .selectAll("text")
+      .style("font-size", "12px");
+
+    g.selectAll(".bar")
+      .data(data)
+      .enter().append("rect")
+      .attr("class", "bar")
+      .attr("x", d => x(d.label) || "0")
+      .attr("y", d => y(d.value))
+      .attr("width", x.bandwidth())
+      .attr("height", d => height - y(d.value))
+      .attr("fill", d => d.color)
+      .on("mouseover", function(event, d) {
+        d3.select(this)
+          .transition()
+          .duration(200)
+          .style("opacity", 0.7);
+        
+        g.append("text")
+          .attr("class", "tooltip")
+          .attr("x", x(d.label) || "0" + x.bandwidth() / 2)
+          .attr("y", y(d.value) - 5)
+          .attr("text-anchor", "middle")
+          .style("font-size", "12px")
+          .style("fill", "black")
+          .text(`${d.value}`);
+      })
+      .on("mouseout", function() {
+        d3.select(this)
+          .transition()
+          .duration(200)
+          .style("opacity", 1);
+        d3.select(".tooltip").remove();
+      });
+
+      // Chart title
+      svg.append("text")
+        .attr("x", (width + margin.left + margin.right) / 2)
+        .attr("y", margin.top / 2)
+        .attr("text-anchor", "middle")
+        .style("font-size", "20px")
+        .style("font-weight", "bold")
+        .text(chartTitle);
+
+      // X axis label
+      svg.append("text")
+        .attr("x", (width + margin.left + margin.right) / 2)
+        .attr("y", height + margin.top + margin.bottom - 20)
+        .attr("text-anchor", "middle")
+        .style("font-size", "16px")
+        .text("Categories");
+
+      // Y axis label
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("y", margin.left / 2 - 10)
+        .attr("x", -(height + margin.top + margin.bottom) / 2 + margin.top)
+        .attr("text-anchor", "middle")
+        .style("font-size", "16px")
+        .text("Value");
   };
 
-  const removeDataRow = (index: number) => {
+  const addDataRow = () => {
+    const newLabel = `Category ${String.fromCharCode(65 + data.length)}`;
+    const newValue = Math.floor(Math.random() * 100);
+    const newColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+
+    setData([...data, { label: newLabel, value: newValue, color: newColor }]);
+  };
+
+  const removeDataRow = () => {
     if (data.length > 1) {
-      setData(data.filter((_, i) => i !== index));
+      setData(data.slice(0, -1));
     }
   };
 
-  const updateDataRow = (index: number, field: keyof DataRow, value: string | number) => {
-    const newData = [...data];
-    newData[index] = { ...newData[index], [field]: value };
+  const randomizeData = () => {
+    const newData = data.map(item => ({
+      ...item,
+      value: Math.floor(Math.random() * 100),
+      color: '#' + Math.floor(Math.random()*16777215).toString(16)
+    }));
     setData(newData);
   };
 
-  const generateSampleData = () => {
-    const sampleData = [
-      { label: 'Sales Q1', value: 85, color: '#3B82F6' },
-      { label: 'Sales Q2', value: 92, color: '#10B981' },
-      { label: 'Sales Q3', value: 76, color: '#F59E0B' },
-      { label: 'Sales Q4', value: 88, color: '#EF4444' }
-    ];
-    setData(sampleData);
-    toast({
-      title: "Sample data loaded",
-      description: "Quarterly sales data has been loaded",
-    });
-  };
-
-  const generateRandomData = () => {
-    const labels = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'];
-    const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-    const randomData = labels.slice(0, Math.floor(Math.random() * 4) + 2).map((label, index) => ({
-      label,
-      value: Math.floor(Math.random() * 90) + 10,
-      color: colors[index]
-    }));
-    setData(randomData);
-    toast({
-      title: "Random data generated",
-      description: `Generated ${randomData.length} data points`,
-    });
-  };
-
-  const saveChartData = async () => {
+  const handleSaveChart = async () => {
+    setIsChartSaved(true);
     try {
-      await saveChart({
-        type: 'bar',
-        data,
-        timestamp: new Date().toISOString()
-      });
+      await saveChart('bar', chartTitle, data);
       toast({
-        title: "Chart saved successfully",
-        description: "Your bar chart has been saved to the database",
+        title: "Chart saved!",
+        description: "Your bar chart has been successfully saved.",
       });
     } catch (error) {
       toast({
+        variant: "destructive",
         title: "Error saving chart",
-        description: "Failed to save chart data",
-        variant: "destructive",
+        description: "Failed to save the bar chart.",
       });
+    } finally {
+      setTimeout(() => setIsChartSaved(false), 2000);
     }
   };
-
-  const generateChart = () => {
-    if (!svgRef.current || data.some(d => !d.label || d.value <= 0)) {
-      toast({
-        title: "Invalid data",
-        description: "Please ensure all labels are filled and values are positive",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
-
-    const margin = { top: 20, right: 30, bottom: 40, left: 120 };
-    const width = 800 - margin.left - margin.right;
-    const height = 400 - margin.bottom - margin.top;
-
-    const g = svg
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom)
-      .append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
-
-    const xScale = d3.scaleLinear()
-      .domain([0, d3.max(data, d => d.value) || 0])
-      .range([0, width]);
-
-    const yScale = d3.scaleBand()
-      .domain(data.map(d => d.label))
-      .range([0, height])
-      .padding(0.1);
-
-    // Add bars
-    g.selectAll('.bar')
-      .data(data)
-      .enter().append('rect')
-      .attr('class', 'bar')
-      .attr('x', 0)
-      .attr('y', d => yScale(d.label) || 0)
-      .attr('width', 0)
-      .attr('height', yScale.bandwidth())
-      .attr('fill', d => d.color)
-      .attr('rx', 4)
-      .transition()
-      .duration(800)
-      .attr('width', d => xScale(d.value));
-
-    // Add value labels
-    g.selectAll('.value-label')
-      .data(data)
-      .enter().append('text')
-      .attr('class', 'value-label')
-      .attr('x', d => xScale(d.value) + 5)
-      .attr('y', d => (yScale(d.label) || 0) + yScale.bandwidth() / 2)
-      .attr('dy', '0.35em')
-      .style('font-size', '12px')
-      .style('fill', '#374151')
-      .style('font-weight', '500')
-      .style('opacity', 0)
-      .text(d => d.value)
-      .transition()
-      .delay(800)
-      .duration(400)
-      .style('opacity', 1);
-
-    // Add y-axis
-    g.append('g')
-      .call(d3.axisLeft(yScale))
-      .style('font-size', '12px')
-      .style('color', '#374151');
-
-    // Add x-axis
-    g.append('g')
-      .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(xScale))
-      .style('font-size', '12px')
-      .style('color', '#374151');
-
-    toast({
-      title: "Chart generated",
-      description: "Your bar chart has been created successfully",
-    });
-  };
-
-  useEffect(() => {
-    generateChart();
-  }, [data]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Bar Chart Generator</h1>
-          <p className="text-gray-600">Create interactive horizontal bar charts with custom data and colors</p>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Plus className="w-5 h-5" />
-                  Data Input
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {data.map((row, index) => (
-                  <div key={index} className="p-4 border rounded-lg space-y-3 bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Data Point {index + 1}</Label>
-                      {data.length > 1 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => removeDataRow(index)}
-                          className="h-6 w-6 p-0"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </Button>
-                      )}
-                    </div>
-                    <div>
-                      <Label htmlFor={`label-${index}`} className="text-xs text-gray-600">Label</Label>
-                      <Input
-                        id={`label-${index}`}
-                        value={row.label}
-                        onChange={(e) => updateDataRow(index, 'label', e.target.value)}
-                        placeholder="Enter label"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`value-${index}`} className="text-xs text-gray-600">Value</Label>
-                      <Input
-                        id={`value-${index}`}
-                        type="number"
-                        value={row.value}
-                        onChange={(e) => updateDataRow(index, 'value', parseFloat(e.target.value) || 0)}
-                        placeholder="Enter value"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`color-${index}`} className="text-xs text-gray-600">Color</Label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <input
-                          id={`color-${index}`}
-                          type="color"
-                          value={row.color}
-                          onChange={(e) => updateDataRow(index, 'color', e.target.value)}
-                          className="w-8 h-8 rounded border cursor-pointer"
-                        />
-                        <Input
-                          value={row.color}
-                          onChange={(e) => updateDataRow(index, 'color', e.target.value)}
-                          placeholder="#000000"
-                          className="text-xs"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="flex gap-2">
-                  <Button onClick={addDataRow} className="flex-1" variant="outline">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Row
-                  </Button>
-                </div>
-
-                <div className="pt-4 border-t space-y-2">
-                  <Button onClick={generateSampleData} variant="outline" className="w-full">
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Load Sample Data
-                  </Button>
-                  <Button onClick={generateRandomData} variant="outline" className="w-full">
-                    <Shuffle className="w-4 h-4 mr-2" />
-                    Generate Random Data
-                  </Button>
-                  <Button onClick={saveChartData} className="w-full">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Chart
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-white shadow overflow-hidden rounded-md">
+          <div className="px-4 py-5 sm:px-6 bg-gray-50 border-b border-gray-200">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              Bar Chart Generator
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Customize your bar chart with dynamic data.
+            </p>
           </div>
 
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Chart Visualization</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-white p-4 rounded-lg border">
-                  <svg ref={svgRef} className="w-full"></svg>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="px-4 py-5 sm:p-6">
+
+            <div className="mb-4">
+              <label htmlFor="chartTitle" className="block text-sm font-medium text-gray-700">
+                Chart Title
+              </label>
+              <div className="mt-1">
+                <input
+                  type="text"
+                  name="chartTitle"
+                  id="chartTitle"
+                  className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  value={chartTitle}
+                  onChange={(e) => setChartTitle(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="mb-4 flex space-x-2">
+              <button
+                onClick={addDataRow}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-500 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Data
+              </button>
+              <button
+                onClick={removeDataRow}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-500 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                <Minus className="w-4 h-4 mr-2" />
+                Remove Data
+              </button>
+              <button
+                onClick={randomizeData}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-500 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <Shuffle className="w-4 h-4 mr-2" />
+                Randomize
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <svg ref={chartRef} width="800" height="500"></svg>
+            </div>
+
+            <div className="mt-4">
+              <button
+                onClick={handleSaveChart}
+                disabled={isChartSaved}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300 disabled:cursor-not-allowed"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {isChartSaved ? 'Saving...' : 'Save Chart'}
+              </button>
+            </div>
+
           </div>
         </div>
       </div>
